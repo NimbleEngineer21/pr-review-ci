@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "On-demand multi-model PR reviewer. Diverse non-Claude panel via OpenRouter, one combined review.",
+  "license": "MIT",
   "engines": {
     "node": ">=22"
   },
