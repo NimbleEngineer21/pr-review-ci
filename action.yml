@@ -1,0 +1,37 @@
+name: 'PR Review (multi-model)'
+description: 'On-demand PR review by a diverse non-Claude panel via OpenRouter. Combines all views into one review with a MERGE/COMMENT/BLOCK verdict.'
+inputs:
+  pr_number:
+    description: 'Pull request number to review.'
+    required: true
+  effort:
+    description: 'Optional override: low | medium | high. Empty = auto by PR size.'
+    required: false
+    default: ''
+  openrouter_api_key:
+    description: 'OpenRouter API key.'
+    required: true
+  github_token:
+    description: 'Token used to read the PR and post the review.'
+    required: false
+    default: ${{ github.token }}
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Install reviewer deps
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: npm ci --no-audit --no-fund
+    - name: Run review
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: node --import tsx src/cli.ts
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        PR_NUMBER: ${{ inputs.pr_number }}
+        EFFORT: ${{ inputs.effort }}
+        OPENROUTER_API_KEY: ${{ inputs.openrouter_api_key }}

@@ -1,0 +1,35 @@
+name: PR Review (reusable)
+
+# Reusable wrapper other repos call. It just runs the composite action in this
+# same repo, which GitHub fetches automatically (respecting the "accessible
+# from repositories owned by the user" setting for a private repo).
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        description: PR number to review.
+        type: number
+        required: true
+      effort:
+        description: "low | medium | high (empty = auto by PR size)."
+        type: string
+        default: ''
+    secrets:
+      OPENROUTER_API_KEY:
+        required: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Review
+        uses: NimbleEngineer21/pr-review-ci@main
+        with:
+          pr_number: ${{ inputs.pr_number }}
+          effort: ${{ inputs.effort }}
+          openrouter_api_key: ${{ secrets.OPENROUTER_API_KEY }}
