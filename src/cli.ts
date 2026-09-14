@@ -7,6 +7,7 @@ import { computeMetrics } from './metrics';
 import { planReview } from './planner';
 import { runReviewer } from './reviewer';
 import { synthesize } from './synthesize';
+import { usage } from './openrouter';
 import { buildCommentableIndex, isInlineEligible } from './diffmap';
 import { buildInlineComments, buildSummaryMarkdown } from './render';
 import {
@@ -77,6 +78,13 @@ async function main(): Promise<void> {
   await upsertSummaryComment(ctx, summary);
   console.log(`Posted ${inline.length} inline comment(s) and the summary.`);
   console.log('::endgroup::');
+
+  const cost = usage.cost > 0 ? ` cost=$${usage.cost.toFixed(4)}` : '';
+  console.log(`Usage: ${usage.calls} model call(s), ${usage.totalTokens} token(s)${cost}`);
+  for (const [model, u] of Object.entries(usage.byModel)) {
+    const c = u.cost > 0 ? ` $${u.cost.toFixed(4)}` : '';
+    console.log(`  ${model}: ${u.calls} call(s), ${u.totalTokens} token(s)${c}`);
+  }
 }
 
 main().catch((err) => {
