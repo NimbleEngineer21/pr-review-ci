@@ -83,7 +83,10 @@ truncated at 120k chars, output token caps.
 - **Phase 2 (done):** cheap-LLM classifier (`src/classify.ts`) refines persona
   choice + per-PR focus, with a deterministic fallback; deterministic
   pre-clustering (`src/cluster.ts`) makes cross-model agreement explicit before
-  synthesis. Externalized `policy.json` is still future.
+  synthesis. Per-repo `.github/pr-review.json` overrides (models, limits, size
+  thresholds, disabled personas) via `src/config.ts` `applyConfig`. Re-runs
+  replace their own comments in place (summary upserted, prior inline comments
+  deleted by marker).
 - **Phase 3:** wire the caller repos (lake-cherokee-website, almanaut) with the
   slash-command and label trigger workflows; replace stale inline comments in
   place on re-run; nits polish.

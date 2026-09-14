@@ -1,6 +1,7 @@
 // Turns a Synthesis into the GitHub artifacts: inline comments + the top-level
 // summary markdown. Pure and testable.
 
+import { INLINE_MARKER } from './config';
 import type { MergedFinding, Synthesis, Verdict } from './findings';
 import type { InlineComment } from './github';
 import type { Plan } from './policy';
@@ -30,7 +31,7 @@ export function buildInlineComments(synth: Synthesis): InlineComment[] {
     out.push({
       path: f.path,
       line: f.line,
-      body: `**${SEV_LABEL[f.severity] ?? f.severity}: ${f.title}**${agree(f)}\n\n${f.body}`,
+      body: `${INLINE_MARKER}\n**${SEV_LABEL[f.severity] ?? f.severity}: ${f.title}**${agree(f)}\n\n${f.body}`,
     });
   }
   return out;

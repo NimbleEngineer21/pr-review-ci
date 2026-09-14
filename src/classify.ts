@@ -3,7 +3,7 @@
 // value for THIS PR, with a specific focus each. Deterministic metrics are the
 // seed so the model never guesses size; it only refines persona + focus.
 
-import { MODELS, LIMITS } from './config';
+import { settings } from './config';
 import { chat, extractJson } from './openrouter';
 import { PERSONAS, type PersonaId } from './personas';
 import { ALL_PERSONAS, reviewerCount, type PersonaChoice } from './policy';
@@ -42,20 +42,20 @@ Return ONLY this JSON:
  * the deterministic plan.
  */
 export async function classifyPlan(metrics: Metrics): Promise<PersonaChoice[] | null> {
-  const suggested = Math.min(reviewerCount(metrics.bucket), LIMITS.maxReviewers);
+  const suggested = Math.min(reviewerCount(metrics.bucket), settings.limits.maxReviewers);
   const user = [
     `Persona catalog:\n${catalog()}`,
     '',
     `Metrics: bucket=${metrics.bucket}; codeChurn=${metrics.codeChurn}; overlays=[${metrics.overlays.join(', ')}]`,
-    `Deterministic suggestion: about ${suggested} reviewer(s). You may adjust between 1 and ${LIMITS.maxReviewers}.`,
+    `Deterministic suggestion: about ${suggested} reviewer(s). You may adjust between 1 and ${settings.limits.maxReviewers}.`,
     '',
     `Change digest:\n${buildDigest(metrics)}`,
   ].join('\n');
 
   try {
     const raw = await chat({
-      model: MODELS.classifier,
-      system: SYSTEM.replace('MAXREVIEWERS', String(LIMITS.maxReviewers)),
+      model: settings.models.classifier,
+      system: SYSTEM.replace('MAXREVIEWERS', String(settings.limits.maxReviewers)),
       user,
       maxTokens: 700,
       json: true,
@@ -75,7 +75,7 @@ export async function classifyPlan(metrics: Metrics): Promise<PersonaChoice[] | 
         focus: typeof o['focus'] === 'string' ? o['focus'] : undefined,
       });
     }
-    return choices.length ? choices.slice(0, LIMITS.maxReviewers) : null;
+    return choices.length ? choices.slice(0, settings.limits.maxReviewers) : null;
   } catch {
     return null;
   }

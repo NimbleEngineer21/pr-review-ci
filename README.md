@@ -118,10 +118,34 @@ gh label create ai-review      --repo NimbleEngineer21/<repo> --color 1f6feb --d
 gh label create ai-review-deep --repo NimbleEngineer21/<repo> --color 8250df --description "Run the full high-effort panel"
 ```
 
+## Per-repo tuning (optional)
+
+Drop a `.github/pr-review.json` in the caller repo to override defaults. Every
+field is optional; unknown or malformed fields are ignored. Fetched from the
+default branch.
+
+```json
+{
+  "models": {
+    "classifier": "openai/gpt-5-nano",
+    "synth": "openai/gpt-5-mini",
+    "pool": ["openai/gpt-5-mini", "deepseek/deepseek-v4.1-flash", "meta-llama/llama-3.3-70b-instruct"],
+    "cheapPool": ["google/gemini-2.5-flash", "qwen/qwen3-coder-30b-a3b-instruct"]
+  },
+  "limits": { "maxReviewers": 3, "maxDiffChars": 120000 },
+  "thresholds": { "small": 50, "medium": 300 },
+  "disabledPersonas": ["cloudflare"]
+}
+```
+
+Use it to swap the model roster per repo, cap the panel size, retune the size
+buckets, or drop a persona that a repo doesn't need (e.g. `cloudflare` on a
+non-Workers repo).
+
 ## Notes
 
 - The review posts `event: COMMENT` — it recommends, it never auto-approves or
   requests changes.
-- Re-running updates the summary comment in place (matched by a hidden marker);
-  inline comments from prior runs currently remain (Phase 3 will replace them).
+- Re-running replaces its own comments in place: the summary is upserted and the
+  prior run's inline comments are deleted (both matched by hidden markers).
 - Pin callers to a tag (`@v1`) instead of `@main` once you cut one, for stability.

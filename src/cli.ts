@@ -2,13 +2,20 @@
 // gather -> metrics -> plan -> fan-out reviewers -> synthesize -> post once.
 
 import type { Effort } from './findings';
+import { applyConfig } from './config';
 import { computeMetrics } from './metrics';
 import { planReview } from './planner';
 import { runReviewer } from './reviewer';
 import { synthesize } from './synthesize';
 import { buildCommentableIndex, isInlineEligible } from './diffmap';
 import { buildInlineComments, buildSummaryMarkdown } from './render';
-import { gatherPull, postReview, upsertSummaryComment } from './github';
+import {
+  gatherPull,
+  postReview,
+  upsertSummaryComment,
+  fetchRepoConfig,
+  deletePriorInlineComments,
+} from './github';
 
 function parseEffort(raw: string | undefined): Effort | undefined {
   const v = (raw ?? '').trim().toLowerCase();
@@ -29,6 +36,11 @@ async function main(): Promise<void> {
   requireEnv('OPENROUTER_API_KEY');
   requireEnv('GITHUB_TOKEN');
   const effort = parseEffort(process.env.EFFORT);
+
+  // Optional per-repo overrides from .github/pr-review.json (default branch).
+  const repoConfig = await fetchRepoConfig(owner, repo);
+  applyConfig(repoConfig);
+  if (repoConfig) console.log('Applied .github/pr-review.json overrides.');
 
   console.log(`::group::Gather PR #${number}`);
   const ctx = await gatherPull(owner, repo, number);
@@ -59,6 +71,8 @@ async function main(): Promise<void> {
   const summary = buildSummaryMarkdown(plan, results, synth);
 
   console.log('::group::Post');
+  const removed = await deletePriorInlineComments(ctx);
+  if (removed) console.log(`Cleared ${removed} inline comment(s) from a prior run.`);
   await postReview(ctx, `See the summary comment for the ${synth.verdict} recommendation.`, inline);
   await upsertSummaryComment(ctx, summary);
   console.log(`Posted ${inline.length} inline comment(s) and the summary.`);

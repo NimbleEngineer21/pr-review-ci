@@ -3,7 +3,7 @@
 // different model lineage. Phase 1 is deterministic; Phase 2 lets a cheap
 // classifier refine persona choice and focus.
 
-import { MODELS, MODEL_POOL, CHEAP_POOL, LIMITS } from './config';
+import { settings } from './config';
 import type { Effort } from './findings';
 import type { Bucket, Metrics } from './metrics';
 import type { PersonaId } from './personas';
@@ -66,7 +66,7 @@ export const ALL_PERSONAS: PersonaId[] = [
 
 export function reviewerCount(bucket: Bucket, override?: Effort): number {
   if (override === 'low') return 1;
-  if (override === 'high') return LIMITS.maxReviewers;
+  if (override === 'high') return settings.limits.maxReviewers;
   switch (bucket) {
     case 'docs-only':
     case 'tests-only':
@@ -75,7 +75,7 @@ export function reviewerCount(bucket: Bucket, override?: Effort): number {
     case 'medium':
       return 2;
     case 'large':
-      return LIMITS.maxReviewers;
+      return settings.limits.maxReviewers;
   }
 }
 
@@ -130,11 +130,14 @@ export function assemblePlan(
   effort: Effort,
   fallbackFocus: string,
 ): Plan {
+  const disabled = new Set<PersonaId>(settings.disabledPersonas);
   const seen = new Set<PersonaId>();
-  const deduped = choices.filter((c) => (seen.has(c.persona) ? false : (seen.add(c.persona), true)));
-  const pool = effort === 'low' ? CHEAP_POOL : MODEL_POOL;
+  const deduped = choices.filter((c) =>
+    disabled.has(c.persona) || seen.has(c.persona) ? false : (seen.add(c.persona), true),
+  );
+  const pool = effort === 'low' ? settings.models.cheapPool : settings.models.pool;
 
-  const reviewers: PlanEntry[] = deduped.slice(0, LIMITS.maxReviewers).map((c, i) => ({
+  const reviewers: PlanEntry[] = deduped.slice(0, settings.limits.maxReviewers).map((c, i) => ({
     id: c.persona,
     persona: c.persona,
     model: pool[i % pool.length]!,
@@ -142,12 +145,12 @@ export function assemblePlan(
     focus: (c.focus ?? '').trim() || fallbackFocus,
   }));
 
-  return { bucket, reviewers, synthModel: MODELS.synth };
+  return { bucket, reviewers, synthModel: settings.models.synth };
 }
 
 /** Deterministic plan — the classifier's seed and its fallback. */
 export function buildPlan(metrics: Metrics, effortOverride?: Effort): Plan {
-  const count = Math.min(reviewerCount(metrics.bucket, effortOverride), LIMITS.maxReviewers);
+  const count = Math.min(reviewerCount(metrics.bucket, effortOverride), settings.limits.maxReviewers);
   const effort =
     effortOverride === 'low' || effortOverride === 'high'
       ? effortOverride

@@ -1,6 +1,6 @@
 // GitHub REST helpers: gather the PR, and post one combined review.
 
-import { GITHUB_API, SUMMARY_MARKER } from './config';
+import { GITHUB_API, SUMMARY_MARKER, INLINE_MARKER } from './config';
 import type { ChangedFile } from './metrics';
 
 function token(): string {
@@ -24,6 +24,7 @@ async function gh<T>(path: string, init: RequestInit = {}): Promise<T> {
     const text = await res.text().catch(() => '');
     throw new Error(`GitHub ${init.method ?? 'GET'} ${path} -> ${res.status}: ${text.slice(0, 500)}`);
   }
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
@@ -69,6 +70,41 @@ export interface InlineComment {
   path: string;
   line: number;
   body: string;
+}
+
+/**
+ * Fetch the caller repo's optional `.github/pr-review.json` (default branch).
+ * Returns the parsed JSON, or null if absent/unreadable.
+ */
+export async function fetchRepoConfig(owner: string, repo: string): Promise<unknown | null> {
+  try {
+    const res = await gh<{ content?: string; encoding?: string }>(
+      `/repos/${owner}/${repo}/contents/.github/pr-review.json`,
+    );
+    if (!res.content) return null;
+    const text = Buffer.from(res.content, (res.encoding as BufferEncoding) ?? 'base64').toString('utf8');
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/** Delete this bot's inline comments from prior runs so a re-run replaces them. */
+export async function deletePriorInlineComments(ctx: PullContext): Promise<number> {
+  let deleted = 0;
+  for (let page = 1; ; page++) {
+    const batch = await gh<Array<{ id: number; body: string }>>(
+      `/repos/${ctx.owner}/${ctx.repo}/pulls/${ctx.number}/comments?per_page=100&page=${page}`,
+    );
+    for (const c of batch) {
+      if (c.body?.includes(INLINE_MARKER)) {
+        await gh(`/repos/${ctx.owner}/${ctx.repo}/pulls/comments/${c.id}`, { method: 'DELETE' });
+        deleted++;
+      }
+    }
+    if (batch.length < 100) break;
+  }
+  return deleted;
 }
 
 /**

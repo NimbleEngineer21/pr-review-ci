@@ -1,50 +1,131 @@
-// Model roster and tunables. All non-Claude on purpose: the maintainer already
-// reviews with Claude in-session, so the CI panel exists to add OTHER lineages.
-// IDs are OpenRouter model ids, verified live at build time. Edit here to tune.
+// Runtime settings with defaults. A caller repo can override a subset via a
+// committed `.github/pr-review.json` (see repoconfig.ts). All non-Claude on
+// purpose: the maintainer already reviews with Claude, so this panel adds OTHER
+// lineages. Model ids are OpenRouter ids, verified live at build time.
 
-export const MODELS = {
-  // Cheap, reliable instruction-follower for the size/goal classifier (Phase 2).
-  classifier: 'openai/gpt-5-nano',
-  // Strong-but-affordable reasoner that merges every reviewer into one review.
-  synth: 'openai/gpt-5-mini',
-  // Single-reviewer picks for the cheap buckets.
-  docs: 'google/gemini-2.5-flash',
-  tests: 'qwen/qwen3-coder-30b-a3b-instruct',
-  // Diverse panel pool — one strong model per training lineage.
-  openai: 'openai/gpt-5-mini',
-  deepseek: 'deepseek/deepseek-v4.1-flash',
-  llama: 'meta-llama/llama-3.3-70b-instruct',
-  qwen: 'qwen/qwen3-coder-30b-a3b-instruct',
-  gemini: 'google/gemini-2.5-flash',
-  mistral: 'mistralai/mistral-small-3.2-24b-instruct',
-} as const;
-
-// Model pools for persona assignment. Ordered strongest-first for review work.
-// One persona per lineage keeps the panel diverse.
-export const MODEL_POOL: string[] = [
-  MODELS.openai,
-  MODELS.deepseek,
-  MODELS.llama,
-  MODELS.qwen,
-  MODELS.gemini,
-  MODELS.mistral,
-];
-export const CHEAP_POOL: string[] = [MODELS.gemini, MODELS.qwen, MODELS.mistral];
-
-// Hard caps so a runaway diff can never run up the bill.
-export const LIMITS = {
-  // Max characters of diff text sent to any single reviewer.
-  maxDiffChars: 120_000,
-  // Max reviewers in a panel regardless of policy.
-  maxReviewers: 3,
-  // Per-reviewer output token cap.
-  maxOutputTokens: 4_000,
-  // Synthesizer output token cap.
-  maxSynthTokens: 4_000,
-};
+import type { PersonaId } from './personas';
 
 export const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 export const GITHUB_API = 'https://api.github.com';
 
-// Marker so re-runs update the same summary comment instead of stacking.
+// Markers so re-runs can find and replace their own comments.
 export const SUMMARY_MARKER = '<!-- pr-review-ci:summary -->';
+export const INLINE_MARKER = '<!-- pr-review-ci:inline -->';
+
+export interface Settings {
+  models: {
+    classifier: string;
+    synth: string;
+    /** Diverse pool for panels; one persona per lineage, in order. */
+    pool: string[];
+    /** Cheaper pool used for low-effort passes. */
+    cheapPool: string[];
+  };
+  limits: {
+    maxDiffChars: number;
+    maxReviewers: number;
+    maxOutputTokens: number;
+    maxSynthTokens: number;
+  };
+  /** Code-churn cutoffs: < small => small; <= medium => medium; else large. */
+  thresholds: { small: number; medium: number };
+  /** Personas the repo never wants (e.g. drop 'cloudflare' on a non-CF repo). */
+  disabledPersonas: PersonaId[];
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  models: {
+    classifier: 'openai/gpt-5-nano',
+    synth: 'openai/gpt-5-mini',
+    pool: [
+      'openai/gpt-5-mini',
+      'deepseek/deepseek-v4.1-flash',
+      'meta-llama/llama-3.3-70b-instruct',
+      'qwen/qwen3-coder-30b-a3b-instruct',
+      'google/gemini-2.5-flash',
+      'mistralai/mistral-small-3.2-24b-instruct',
+    ],
+    cheapPool: [
+      'google/gemini-2.5-flash',
+      'qwen/qwen3-coder-30b-a3b-instruct',
+      'mistralai/mistral-small-3.2-24b-instruct',
+    ],
+  },
+  limits: {
+    maxDiffChars: 120_000,
+    maxReviewers: 3,
+    maxOutputTokens: 4_000,
+    maxSynthTokens: 4_000,
+  },
+  thresholds: { small: 50, medium: 300 },
+  disabledPersonas: [],
+};
+
+function clone(s: Settings): Settings {
+  return {
+    models: { ...s.models, pool: [...s.models.pool], cheapPool: [...s.models.cheapPool] },
+    limits: { ...s.limits },
+    thresholds: { ...s.thresholds },
+    disabledPersonas: [...s.disabledPersonas],
+  };
+}
+
+/** Live settings, mutated by applyConfig(). Modules read from here. */
+export const settings: Settings = clone(DEFAULT_SETTINGS);
+
+export function resetSettings(): void {
+  const d = clone(DEFAULT_SETTINGS);
+  settings.models = d.models;
+  settings.limits = d.limits;
+  settings.thresholds = d.thresholds;
+  settings.disabledPersonas = d.disabledPersonas;
+}
+
+/**
+ * Merge a partial, untrusted config over the defaults. Only known keys with the
+ * right shape are applied; anything else is ignored. Never throws.
+ */
+export function applyConfig(raw: unknown): void {
+  resetSettings();
+  if (typeof raw !== 'object' || raw === null) return;
+  const o = raw as Record<string, unknown>;
+
+  const models = o['models'];
+  if (typeof models === 'object' && models !== null) {
+    const m = models as Record<string, unknown>;
+    if (typeof m['classifier'] === 'string') settings.models.classifier = m['classifier'];
+    if (typeof m['synth'] === 'string') settings.models.synth = m['synth'];
+    const pool = asStringArray(m['pool']);
+    if (pool) settings.models.pool = pool;
+    const cheap = asStringArray(m['cheapPool']);
+    if (cheap) settings.models.cheapPool = cheap;
+  }
+
+  const limits = o['limits'];
+  if (typeof limits === 'object' && limits !== null) {
+    const l = limits as Record<string, unknown>;
+    for (const k of ['maxDiffChars', 'maxReviewers', 'maxOutputTokens', 'maxSynthTokens'] as const) {
+      if (typeof l[k] === 'number' && Number.isFinite(l[k]) && (l[k] as number) > 0) {
+        settings.limits[k] = Math.trunc(l[k] as number);
+      }
+    }
+  }
+
+  const thresholds = o['thresholds'];
+  if (typeof thresholds === 'object' && thresholds !== null) {
+    const t = thresholds as Record<string, unknown>;
+    if (typeof t['small'] === 'number' && t['small'] > 0) settings.thresholds.small = Math.trunc(t['small']);
+    if (typeof t['medium'] === 'number' && t['medium'] > settings.thresholds.small) {
+      settings.thresholds.medium = Math.trunc(t['medium']);
+    }
+  }
+
+  const disabled = asStringArray(o['disabledPersonas']);
+  if (disabled) settings.disabledPersonas = disabled as PersonaId[];
+}
+
+function asStringArray(v: unknown): string[] | null {
+  if (!Array.isArray(v)) return null;
+  const arr = v.filter((x): x is string => typeof x === 'string' && x.length > 0);
+  return arr.length ? arr : null;
+}

@@ -1,6 +1,8 @@
 // Deterministic PR metrics: size bucket + path overlays. No LLM, no network.
 // This is the reliable floor the smart classifier (Phase 2) builds on.
 
+import { settings } from './config';
+
 export type Bucket = 'docs-only' | 'tests-only' | 'small' | 'medium' | 'large';
 
 export interface ChangedFile {
@@ -62,8 +64,8 @@ export function bucketFor(files: ChangedFile[]): { bucket: Bucket; codeChurn: nu
   if (allTests) return { bucket: 'tests-only', codeChurn };
 
   let bucket: Bucket;
-  if (codeChurn < 50) bucket = 'small';
-  else if (codeChurn <= 300) bucket = 'medium';
+  if (codeChurn < settings.thresholds.small) bucket = 'small';
+  else if (codeChurn <= settings.thresholds.medium) bucket = 'medium';
   else bucket = 'large';
   return { bucket, codeChurn };
 }

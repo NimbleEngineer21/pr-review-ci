@@ -1,7 +1,7 @@
 // Runs one reviewer: send the diff + goal to a model, get structured findings.
 // Reviewers never post; they only return findings for the synthesizer to merge.
 
-import { LIMITS } from './config';
+import { settings } from './config';
 import type { Effort, Finding, ReviewerResult, Severity } from './findings';
 import { chat, extractJson } from './openrouter';
 import { persona } from './personas';
@@ -56,8 +56,8 @@ function buildDiffText(ctx: PullContext): string {
     parts.push(`# ${f.path} (${f.status}, +${f.additions}/-${f.deletions})\n${annotatePatch(f.patch)}`);
   }
   let text = parts.join('\n\n');
-  if (text.length > LIMITS.maxDiffChars) {
-    text = `${text.slice(0, LIMITS.maxDiffChars)}\n\n[diff truncated at ${LIMITS.maxDiffChars} chars]`;
+  if (text.length > settings.limits.maxDiffChars) {
+    text = `${text.slice(0, settings.limits.maxDiffChars)}\n\n[diff truncated at ${settings.limits.maxDiffChars} chars]`;
   }
   return text;
 }
@@ -101,7 +101,7 @@ export async function runReviewer(entry: PlanEntry, ctx: PullContext): Promise<R
       model: entry.model,
       system,
       user,
-      maxTokens: LIMITS.maxOutputTokens,
+      maxTokens: settings.limits.maxOutputTokens,
       json: true,
     });
     const parsed = extractJson<{ findings?: unknown }>(raw);

@@ -3,7 +3,7 @@
 // issues, sets final severity/verdict, and writes the summary. If that call
 // fails we post the deterministic cluster merge, so a review always lands.
 
-import { LIMITS } from './config';
+import { settings } from './config';
 import type { MergedFinding, ReviewerResult, Severity, Synthesis, Verdict } from './findings';
 import { SEVERITY_RANK } from './findings';
 import { chat, extractJson } from './openrouter';
@@ -58,7 +58,7 @@ export async function synthesize(
         model: synthModel,
         system: SYSTEM,
         user: `Clustered findings (JSON):\n${JSON.stringify(compact)}`,
-        maxTokens: LIMITS.maxSynthTokens,
+        maxTokens: settings.limits.maxSynthTokens,
         json: true,
       }),
     );
