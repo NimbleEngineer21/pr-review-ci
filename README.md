@@ -188,3 +188,7 @@ npm run review
   the reusable workflow via `secrets: inherit`.
 - Costs scale with panel size and diff length. Use `effort: low`, a smaller
   `pool`, or `maxReviewers` / `maxDiffChars` to hold spend down.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
