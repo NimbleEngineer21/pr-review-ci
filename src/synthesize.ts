@@ -37,6 +37,21 @@ export async function synthesize(
 
   if (clusters.length === 0) {
     const errored = reviewers.filter((r) => r.error);
+    const succeeded = reviewers.filter((r) => !r.error);
+    // No reviewer produced a result: the panel did not actually review the PR.
+    // Do NOT emit MERGE — that would read as "safe to merge" when the truth is
+    // "the review could not run." Fall back to a non-approving COMMENT.
+    if (succeeded.length === 0) {
+      const who = errored.map((r) => r.id).join(', ') || 'unknown';
+      return {
+        summary:
+          `The review could not run — all ${errored.length} reviewer(s) failed (${who}). ` +
+          `This is **not** an approval. Re-run once the cause is resolved (check the OpenRouter key, ` +
+          `credit, and model availability in the Action logs).`,
+        verdict: 'COMMENT',
+        findings: [],
+      };
+    }
     const note = errored.length
       ? ` (${errored.length} reviewer(s) failed: ${errored.map((r) => r.id).join(', ')})`
       : '';

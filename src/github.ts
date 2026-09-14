@@ -1,7 +1,10 @@
 // GitHub REST helpers: gather the PR, and post one combined review.
 
 import { GITHUB_API, SUMMARY_MARKER, INLINE_MARKER } from './config';
+import { fetchWithTimeout } from './http';
 import type { ChangedFile } from './metrics';
+
+const GITHUB_TIMEOUT_MS = 30_000;
 
 function token(): string {
   const t = process.env.GITHUB_TOKEN;
@@ -10,16 +13,20 @@ function token(): string {
 }
 
 async function gh<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${GITHUB_API}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${token()}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'Content-Type': 'application/json',
-      ...(init.headers ?? {}),
+  const res = await fetchWithTimeout(
+    `${GITHUB_API}${path}`,
+    {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token()}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+        ...(init.headers ?? {}),
+      },
     },
-  });
+    GITHUB_TIMEOUT_MS,
+  );
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`GitHub ${init.method ?? 'GET'} ${path} -> ${res.status}: ${text.slice(0, 500)}`);
@@ -125,7 +132,7 @@ export async function postReview(
 
   let attempt = [...comments];
   for (let tries = 0; tries < 4; tries++) {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${GITHUB_API}/repos/${ctx.owner}/${ctx.repo}/pulls/${ctx.number}/reviews`,
       {
         method: 'POST',
@@ -137,6 +144,7 @@ export async function postReview(
         },
         body: JSON.stringify(payload(attempt)),
       },
+      GITHUB_TIMEOUT_MS,
     );
     if (res.ok) return;
     const text = await res.text().catch(() => '');
