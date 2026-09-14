@@ -80,8 +80,10 @@ truncated at 120k chars, output token caps.
 - **Phase 1 (this repo now):** gather → deterministic plan → diverse reviewer
   fan-out → LLM synthesis (with deterministic fallback) → one combined review.
   Unit tests for metrics, policy, and diff-line mapping.
-- **Phase 2:** cheap-LLM classifier that confirms the bucket and assigns
-  per-reviewer goals; richer cross-model dedupe; externalized `policy.json`.
+- **Phase 2 (done):** cheap-LLM classifier (`src/classify.ts`) refines persona
+  choice + per-PR focus, with a deterministic fallback; deterministic
+  pre-clustering (`src/cluster.ts`) makes cross-model agreement explicit before
+  synthesis. Externalized `policy.json` is still future.
 - **Phase 3:** wire the caller repos (lake-cherokee-website, almanaut) with the
   slash-command and label trigger workflows; replace stale inline comments in
   place on re-run; nits polish.

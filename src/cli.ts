@@ -3,7 +3,7 @@
 
 import type { Effort } from './findings';
 import { computeMetrics } from './metrics';
-import { buildPlan } from './policy';
+import { planReview } from './planner';
 import { runReviewer } from './reviewer';
 import { synthesize } from './synthesize';
 import { buildCommentableIndex, isInlineEligible } from './diffmap';
@@ -36,10 +36,10 @@ async function main(): Promise<void> {
   console.log('::endgroup::');
 
   const metrics = computeMetrics(ctx.files);
-  const plan = buildPlan(metrics, effort);
+  const plan = await planReview(metrics, effort);
   console.log(
     `Plan: bucket=${metrics.bucket} overlays=[${metrics.overlays.join(',')}] ` +
-      `effort=${effort ?? 'auto'} reviewers=${plan.reviewers.map((r) => `${r.id}:${r.model}`).join(', ')}`,
+      `effort=${effort ?? 'auto'} reviewers=${plan.reviewers.map((r) => `${r.persona}:${r.model}`).join(', ')}`,
   );
 
   console.log('::group::Reviewers');

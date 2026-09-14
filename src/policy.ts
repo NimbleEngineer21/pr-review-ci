@@ -52,7 +52,19 @@ const OVERLAY_FOCUS: Record<string, string> = {
   ci: 'This PR changes CI workflows — weigh permissions and untrusted-input injection.',
 };
 
-function reviewerCount(bucket: Bucket, override?: Effort): number {
+export const ALL_PERSONAS: PersonaId[] = [
+  'correctness',
+  'security',
+  'performance',
+  'web-ui',
+  'qa',
+  'data-architect',
+  'cloudflare',
+  'simplicity',
+  'docs',
+];
+
+export function reviewerCount(bucket: Bucket, override?: Effort): number {
   if (override === 'low') return 1;
   if (override === 'high') return LIMITS.maxReviewers;
   switch (bucket) {
@@ -67,7 +79,7 @@ function reviewerCount(bucket: Bucket, override?: Effort): number {
   }
 }
 
-function bucketEffort(bucket: Bucket): Effort {
+export function bucketEffort(bucket: Bucket): Effort {
   switch (bucket) {
     case 'docs-only':
     case 'tests-only':
@@ -96,30 +108,56 @@ function selectPersonas(metrics: Metrics): PersonaId[] {
   return [...wanted].sort((a, b) => PRIORITY[b] - PRIORITY[a]);
 }
 
-function focusFor(metrics: Metrics): string {
+export function focusFor(metrics: Metrics): string {
   const notes = metrics.overlays
     .map((o) => OVERLAY_FOCUS[o])
     .filter((n): n is string => Boolean(n));
   return notes.join(' ');
 }
 
-export function buildPlan(metrics: Metrics, effortOverride?: Effort): Plan {
-  const count = Math.min(reviewerCount(metrics.bucket, effortOverride), LIMITS.maxReviewers);
-  const effort = effortOverride === 'low' || effortOverride === 'high'
-    ? effortOverride
-    : bucketEffort(metrics.bucket);
+export interface PersonaChoice {
+  persona: PersonaId;
+  focus?: string;
+}
 
-  const personas = selectPersonas(metrics).slice(0, count);
+/**
+ * Map chosen personas onto distinct model lineages. Shared by the deterministic
+ * planner and the LLM classifier so both produce the same shape.
+ */
+export function assemblePlan(
+  choices: PersonaChoice[],
+  bucket: Bucket,
+  effort: Effort,
+  fallbackFocus: string,
+): Plan {
+  const seen = new Set<PersonaId>();
+  const deduped = choices.filter((c) => (seen.has(c.persona) ? false : (seen.add(c.persona), true)));
   const pool = effort === 'low' ? CHEAP_POOL : MODEL_POOL;
-  const focus = focusFor(metrics);
 
-  const reviewers: PlanEntry[] = personas.map((persona, i) => ({
-    id: persona,
-    persona,
+  const reviewers: PlanEntry[] = deduped.slice(0, LIMITS.maxReviewers).map((c, i) => ({
+    id: c.persona,
+    persona: c.persona,
     model: pool[i % pool.length]!,
     effort,
-    focus,
+    focus: (c.focus ?? '').trim() || fallbackFocus,
   }));
 
-  return { bucket: metrics.bucket, reviewers, synthModel: MODELS.synth };
+  return { bucket, reviewers, synthModel: MODELS.synth };
 }
+
+/** Deterministic plan — the classifier's seed and its fallback. */
+export function buildPlan(metrics: Metrics, effortOverride?: Effort): Plan {
+  const count = Math.min(reviewerCount(metrics.bucket, effortOverride), LIMITS.maxReviewers);
+  const effort =
+    effortOverride === 'low' || effortOverride === 'high'
+      ? effortOverride
+      : bucketEffort(metrics.bucket);
+
+  const personas = selectPersonas(metrics)
+    .slice(0, count)
+    .map((persona) => ({ persona }));
+
+  return assemblePlan(personas, metrics.bucket, effort, focusFor(metrics));
+}
+
+export { selectPersonas };
