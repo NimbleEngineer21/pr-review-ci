@@ -2,9 +2,10 @@
 // gather -> metrics -> plan -> fan-out reviewers -> synthesize -> post once.
 
 import type { Effort } from './findings';
-import { applyConfig } from './config';
+import { applyConfig, settings } from './config';
 import { computeMetrics } from './metrics';
 import { planReview } from './planner';
+import { planRunBudget } from './policy';
 import { runReviewer } from './reviewer';
 import { synthesize } from './synthesize';
 import { usage } from './openrouter';
@@ -50,6 +51,23 @@ async function main(): Promise<void> {
 
   const metrics = computeMetrics(ctx.files);
   const plan = await planReview(metrics, effort);
+
+  // Cost guard: keep total projected input under the run budget for a huge PR.
+  const diffChars = ctx.files.reduce((n, f) => n + (f.patch?.length ?? 0), 0);
+  const budget = planRunBudget(
+    plan.reviewers.length,
+    diffChars,
+    settings.limits.maxRunInputTokens,
+    settings.limits.maxDiffChars,
+  );
+  if (budget.actions.length > 0) {
+    settings.limits.maxDiffChars = budget.maxDiffChars;
+    plan.reviewers = plan.reviewers.slice(0, budget.seats);
+    console.log(
+      `Budget guard: projected input exceeded ${settings.limits.maxRunInputTokens} tokens — ${budget.actions.join('; ')}.`,
+    );
+  }
+
   console.log(
     `Plan: bucket=${metrics.bucket} overlays=[${metrics.overlays.join(',')}] ` +
       `effort=${effort ?? 'auto'} reviewers=${plan.reviewers.map((r) => `${r.persona}:${r.model}`).join(', ')}`,

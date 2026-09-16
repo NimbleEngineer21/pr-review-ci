@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { synthesize } from '../synthesize';
-import type { ReviewerResult } from '../findings';
+import { synthesize, reinjectCritical } from '../synthesize';
+import type { MergedFinding, ReviewerResult } from '../findings';
+import type { Cluster } from '../cluster';
 
 // A reviewer that ran clean (no findings) vs one that failed. The empty-cluster
 // path in synthesize() never calls the model, so these need no network stub.
@@ -39,5 +40,46 @@ describe('synthesize with no surviving clusters', () => {
     expect(s.verdict).toBe('MERGE');
     expect(s.summary).toMatch(/no issues found/i);
     expect(s.summary).not.toMatch(/failed/i);
+  });
+});
+
+const cluster = (over: Partial<Cluster>): Cluster => ({
+  path: 'src/x.ts',
+  line: 10,
+  severity: 'high',
+  category: 'security',
+  title: 'IDOR on the claim path',
+  bodies: ['acts on another user id'],
+  agreedBy: ['security'],
+  ...over,
+});
+
+describe('reinjectCritical (rule D safety net)', () => {
+  it('re-adds a high-severity security cluster the synthesizer dropped', () => {
+    const out = reinjectCritical([], [cluster({})]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.body).toMatch(/one reviewer/i);
+    expect(out[0]!.severity).toBe('high');
+  });
+
+  it('leaves a cluster alone when a synth finding already covers it', () => {
+    const covered: MergedFinding = {
+      path: 'src/x.ts',
+      line: 11,
+      severity: 'high',
+      category: 'security',
+      title: 'kept',
+      body: 'b',
+      agreedBy: [],
+      inline: false,
+    };
+    expect(reinjectCritical([covered], [cluster({})])).toHaveLength(1);
+  });
+
+  it('does not re-add a low-severity or non-critical cluster', () => {
+    expect(reinjectCritical([], [cluster({ severity: 'nit' })])).toHaveLength(0);
+    expect(
+      reinjectCritical([], [cluster({ category: 'style', title: 'naming', bodies: ['rename'] })]),
+    ).toHaveLength(0);
   });
 });
