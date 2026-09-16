@@ -6,6 +6,15 @@ on:
   issue_comment:
     types: [created]
 
+# The reusable workflow posts the review, so the caller's token must carry write
+# scopes. A repo whose default GITHUB_TOKEN is read-only (GitHub's default) would
+# otherwise fail the reusable call at startup, because a called workflow cannot
+# exceed the caller's permissions.
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 jobs:
   review:
     if: >
