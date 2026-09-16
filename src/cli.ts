@@ -72,11 +72,26 @@ async function main(): Promise<void> {
   const summary = buildSummaryMarkdown(plan, results, synth);
 
   console.log('::group::Post');
+  // The summary comment is the primary deliverable — it carries the verdict and
+  // every finding. Post it first so it lands even if the inline pass has trouble.
+  await upsertSummaryComment(ctx, summary);
   const removed = await deletePriorInlineComments(ctx);
   if (removed) console.log(`Cleared ${removed} inline comment(s) from a prior run.`);
-  await postReview(ctx, `See the summary comment for the ${synth.verdict} recommendation.`, inline);
-  await upsertSummaryComment(ctx, summary);
-  console.log(`Posted ${inline.length} inline comment(s) and the summary.`);
+  // Inline comments are a best-effort enhancement (the summary already lists the
+  // findings). Never fail the whole run if only the inline pass fails.
+  if (inline.length > 0) {
+    try {
+      await postReview(ctx, `See the summary comment for the ${synth.verdict} recommendation.`, inline);
+      console.log(`Posted ${inline.length} inline comment(s) and the summary.`);
+    } catch (err) {
+      console.error(
+        `Inline comments failed to post; the summary comment is up to date. ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  } else {
+    console.log('Posted the summary; no inline comments to attach.');
+  }
   console.log('::endgroup::');
 
   const cost = usage.cost > 0 ? ` cost=$${usage.cost.toFixed(4)}` : '';
