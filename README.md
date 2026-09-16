@@ -102,7 +102,7 @@ jobs:
     if: >
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/review')
-    uses: NimbleEngineer21/pr-review-ci/.github/workflows/review.yml@main
+    uses: NimbleEngineer21/pr-review-ci/.github/workflows/review.yml@v1
     with:
       pr_number: ${{ github.event.issue.number }}
       effort: >-
@@ -130,7 +130,7 @@ jobs:
     if: >
       github.event.label.name == 'ai-review' ||
       github.event.label.name == 'ai-review-deep'
-    uses: NimbleEngineer21/pr-review-ci/.github/workflows/review.yml@main
+    uses: NimbleEngineer21/pr-review-ci/.github/workflows/review.yml@v1
     with:
       pr_number: ${{ github.event.pull_request.number }}
       effort: ${{ github.event.label.name == 'ai-review-deep' && 'high' || '' }}
@@ -150,8 +150,10 @@ If your fork of this repo is **private**, grant the caller repos access:
 its Settings → Actions → General → **Access** → allow the repos (or the whole
 owner) that call it. A public action needs no such grant.
 
-Pin callers to a tag (`@v1`) instead of `@main` once you cut a release, for
-stability.
+Callers are pinned to the `@v1` tag (a moving major tag) rather than `@main`,
+so a mid-flight change on `main` never alters a caller's behavior. Each
+compatible release re-points `v1`; every release also gets an immutable
+`vX.Y.Z` tag for the record.
 
 ## Per-repo tuning (optional)
 

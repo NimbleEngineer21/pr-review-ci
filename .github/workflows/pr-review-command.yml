@@ -20,7 +20,7 @@ jobs:
     if: >
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/review')
-    uses: NimbleEngineer21/pr-review-ci/.github/workflows/review.yml@main
+    uses: NimbleEngineer21/pr-review-ci/.github/workflows/review.yml@v1
     with:
       pr_number: ${{ github.event.issue.number }}
       effort: >-
