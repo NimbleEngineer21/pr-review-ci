@@ -28,6 +28,12 @@ describe('applyConfig', () => {
     expect(settings.models.pool).toEqual(['a/b', 'c/d']);
   });
 
+  it('overrides the reasoning token knobs', () => {
+    applyConfig({ limits: { reasoningOutputTokens: 8_000, maxReasoningTokens: 32_000 } });
+    expect(settings.limits.reasoningOutputTokens).toBe(8_000);
+    expect(settings.limits.maxReasoningTokens).toBe(32_000);
+  });
+
   it('rejects bad values (non-positive, wrong type)', () => {
     applyConfig({ limits: { maxReviewers: -3, maxDiffChars: 'lots' } });
     expect(settings.limits.maxReviewers).toBe(DEFAULT_SETTINGS.limits.maxReviewers);

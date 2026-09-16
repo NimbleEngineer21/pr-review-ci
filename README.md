@@ -169,7 +169,12 @@ the caller's default branch.
     "pool": ["openai/gpt-5-mini", "deepseek/deepseek-v4.1-flash", "meta-llama/llama-3.3-70b-instruct"],
     "cheapPool": ["google/gemini-2.5-flash", "qwen/qwen3-coder-30b-a3b-instruct"]
   },
-  "limits": { "maxReviewers": 3, "maxDiffChars": 120000 },
+  "limits": {
+    "maxReviewers": 3,
+    "maxDiffChars": 120000,
+    "reasoningOutputTokens": 12000,
+    "maxReasoningTokens": 64000
+  },
   "thresholds": { "small": 50, "medium": 300 },
   "disabledPersonas": ["cloudflare"]
 }
@@ -178,6 +183,13 @@ the caller's default branch.
 Use it to swap the model roster per repo, cap the panel size, retune the size
 buckets, or drop a persona a repo doesn't need (e.g. `cloudflare` on a
 non-Workers repo).
+
+**Reasoning models.** OpenAI reasoning lineages (`o1`/`o3`/`o4`, GPT-5) bill
+hidden reasoning tokens from the same `max_tokens` pool as the visible answer, so
+a normal cap makes the model spend its whole budget thinking and return empty
+content. For those models only, the client raises the request ceiling to
+`reasoningOutputTokens` (the visible-output floor) plus `maxReasoningTokens` (the
+reasoning headroom) and sets no effort tier. Non-reasoning models are unaffected.
 
 ## Local development
 

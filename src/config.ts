@@ -26,6 +26,15 @@ export interface Settings {
     maxReviewers: number;
     maxOutputTokens: number;
     maxSynthTokens: number;
+    /**
+     * Visible-output floor for OpenAI reasoning models (o-series, GPT-5). Their
+     * hidden reasoning is billed from the same max_tokens pool as the answer, so
+     * a normal cap starves the answer. The client widens the request ceiling to
+     * this floor plus `maxReasoningTokens` for those models only.
+     */
+    reasoningOutputTokens: number;
+    /** Reasoning headroom added on top of the visible floor for those models. */
+    maxReasoningTokens: number;
   };
   /** Code-churn cutoffs: < small => small; <= medium => medium; else large. */
   thresholds: { small: number; medium: number };
@@ -56,6 +65,8 @@ export const DEFAULT_SETTINGS: Settings = {
     maxReviewers: 3,
     maxOutputTokens: 4_000,
     maxSynthTokens: 4_000,
+    reasoningOutputTokens: 12_000,
+    maxReasoningTokens: 64_000,
   },
   thresholds: { small: 50, medium: 300 },
   disabledPersonas: [],
@@ -104,7 +115,15 @@ export function applyConfig(raw: unknown): void {
   const limits = o['limits'];
   if (typeof limits === 'object' && limits !== null) {
     const l = limits as Record<string, unknown>;
-    for (const k of ['maxDiffChars', 'maxReviewers', 'maxOutputTokens', 'maxSynthTokens'] as const) {
+    const keys = [
+      'maxDiffChars',
+      'maxReviewers',
+      'maxOutputTokens',
+      'maxSynthTokens',
+      'reasoningOutputTokens',
+      'maxReasoningTokens',
+    ] as const;
+    for (const k of keys) {
       if (typeof l[k] === 'number' && Number.isFinite(l[k]) && (l[k] as number) > 0) {
         settings.limits[k] = Math.trunc(l[k] as number);
       }
