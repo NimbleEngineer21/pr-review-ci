@@ -1,0 +1,20 @@
+name: PR Review (command)
+
+# Dogfood: this repo reviews its own PRs. Comment `/review`, `/review low`, or
+# `/review high` on a PR to run the multi-model panel.
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  review:
+    if: >
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/review')
+    uses: NimbleEngineer21/pr-review-ci/.github/workflows/review.yml@main
+    with:
+      pr_number: ${{ github.event.issue.number }}
+      effort: >-
+        ${{ contains(github.event.comment.body, 'high') && 'high'
+        || (contains(github.event.comment.body, 'low') && 'low' || '') }}
+    secrets: inherit

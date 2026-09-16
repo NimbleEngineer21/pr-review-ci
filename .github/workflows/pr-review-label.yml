@@ -1,0 +1,18 @@
+name: PR Review (label)
+
+# Dogfood: add the label `ai-review` (auto effort) or `ai-review-deep` (high) to
+# a PR in this repo to run the multi-model panel.
+on:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  review:
+    if: >
+      github.event.label.name == 'ai-review' ||
+      github.event.label.name == 'ai-review-deep'
+    uses: NimbleEngineer21/pr-review-ci/.github/workflows/review.yml@main
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
+      effort: ${{ github.event.label.name == 'ai-review-deep' && 'high' || '' }}
+    secrets: inherit
