@@ -6,7 +6,7 @@
 // reviewer for the whole run. Token/cost usage is accumulated so the CLI can log
 // what a run spent against the OpenRouter balance.
 
-import { OPENROUTER_BASE } from './config';
+import { OPENROUTER_BASE, settings } from './config';
 import { fetchWithTimeout, isRetriableStatus, sleep } from './http';
 
 export interface ChatOptions {
@@ -79,13 +79,40 @@ function recordUsage(model: string, u: RawUsage | undefined): void {
   }
 }
 
+// ---- reasoning-model budgeting ----------------------------------------------
+
+/**
+ * True for OpenAI reasoning lineages (o1/o3/o4 series, GPT-5 series). These
+ * spend hidden reasoning tokens out of the SAME `max_tokens` pool as the visible
+ * answer; a tight cap makes reasoning exhaust the budget and the model returns
+ * `finish_reason:"length"` with empty content (still billed). Matches the id
+ * segment after the provider prefix, so `openai/gpt-5-mini`, `openai/o3-mini`,
+ * and `openai/o1` match while `openai/gpt-4o` does not.
+ */
+export function isReasoningModel(model: string): boolean {
+  return /(^|\/)(gpt-5|o[1-4])(-|$)/i.test(model);
+}
+
+/**
+ * The request-level `max_tokens` to send. For a reasoning model, widen the
+ * caller's visible-output budget to at least `reasoningOutputTokens` and add
+ * `maxReasoningTokens` of headroom so hidden reasoning cannot starve the answer.
+ * Effort is left at the provider default — GPT-5 is effort-only and OpenRouter
+ * would turn any reasoning cap into an effort tier, so we set none.
+ */
+function requestMaxTokens(model: string, requested: number): number {
+  if (!isReasoningModel(model)) return requested;
+  const visible = Math.max(requested, settings.limits.reasoningOutputTokens);
+  return visible + settings.limits.maxReasoningTokens;
+}
+
 // ---- the call ---------------------------------------------------------------
 
 export async function chat(opts: ChatOptions): Promise<string> {
   const body: Record<string, unknown> = {
     model: opts.model,
     temperature: opts.temperature ?? 0.2,
-    max_tokens: opts.maxTokens,
+    max_tokens: requestMaxTokens(opts.model, opts.maxTokens),
     // Ask OpenRouter to include token counts and cost in the response.
     usage: { include: true },
     messages: [

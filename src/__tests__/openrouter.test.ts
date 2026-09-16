@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { chat, usage, resetUsage } from '../openrouter';
+import { chat, usage, resetUsage, isReasoningModel } from '../openrouter';
+import { settings } from '../config';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -75,5 +76,54 @@ describe('chat: retry and usage accounting', () => {
 
     await expect(call()).rejects.toThrow(/no content/i);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('reasoning-model token budgeting', () => {
+  function sentBody(fetchMock: ReturnType<typeof vi.fn>): Record<string, unknown> {
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    return JSON.parse(init.body as string) as Record<string, unknown>;
+  }
+
+  it('classifies OpenAI reasoning lineages, not gpt-4o or other providers', () => {
+    expect(isReasoningModel('openai/gpt-5-mini')).toBe(true);
+    expect(isReasoningModel('openai/gpt-5-nano')).toBe(true);
+    expect(isReasoningModel('openai/o3-mini')).toBe(true);
+    expect(isReasoningModel('openai/o1')).toBe(true);
+    expect(isReasoningModel('openai/gpt-4o')).toBe(false);
+    expect(isReasoningModel('deepseek/deepseek-v4.1-flash')).toBe(false);
+    expect(isReasoningModel('meta-llama/llama-3.3-70b-instruct')).toBe(false);
+  });
+
+  it('widens max_tokens to the visible floor plus reasoning headroom and sends no reasoning field', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(completion('ok')));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await chat({ model: 'openai/gpt-5-mini', system: 's', user: 'u', maxTokens: 4_000 });
+
+    const body = sentBody(fetchMock);
+    const expected =
+      Math.max(4_000, settings.limits.reasoningOutputTokens) + settings.limits.maxReasoningTokens;
+    expect(body['max_tokens']).toBe(expected);
+    expect(body['reasoning']).toBeUndefined();
+  });
+
+  it('honors a caller budget already above the reasoning floor', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(completion('ok')));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const big = settings.limits.reasoningOutputTokens + 5_000;
+    await chat({ model: 'openai/gpt-5-mini', system: 's', user: 'u', maxTokens: big });
+
+    expect(sentBody(fetchMock)['max_tokens']).toBe(big + settings.limits.maxReasoningTokens);
+  });
+
+  it('passes a non-reasoning model budget through unchanged', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(completion('ok')));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await chat({ model: 'deepseek/deepseek-v4.1-flash', system: 's', user: 'u', maxTokens: 4_000 });
+
+    expect(sentBody(fetchMock)['max_tokens']).toBe(4_000);
   });
 });

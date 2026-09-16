@@ -24,6 +24,19 @@ function agree(f: MergedFinding): string {
   return f.agreedBy.length > 1 ? ` _(agreed by ${f.agreedBy.join(', ')})_` : '';
 }
 
+/**
+ * Per-reviewer panel status. Distinguishes three outcomes that must not read
+ * alike: the seat errored and did NOT review (a model/server problem — e.g. an
+ * empty-content or timeout failure), the seat reviewed and raised nothing, and
+ * the seat reviewed and raised findings. An errored seat is not "no findings".
+ */
+function panelStatus(r: ReviewerResult): string {
+  if (r.error) return `❌ error — did not review (${r.error.slice(0, 140)})`;
+  if (r.findings.length === 0) return '✅ reviewed — no findings';
+  const n = r.findings.length;
+  return `✅ reviewed — ${n} finding${n === 1 ? '' : 's'}`;
+}
+
 export function buildInlineComments(synth: Synthesis): InlineComment[] {
   const out: InlineComment[] = [];
   for (const f of synth.findings) {
@@ -46,12 +59,7 @@ export function buildSummaryMarkdown(
   const offDiff = synth.findings.filter((f) => !f.inline && f.severity !== 'nit');
   const nits = synth.findings.filter((f) => f.severity === 'nit');
 
-  const panel = reviewers
-    .map(
-      (r) =>
-        `- **${r.title}** — \`${r.model}\`${r.error ? ` — ⚠️ failed: ${r.error.slice(0, 120)}` : ''}`,
-    )
-    .join('\n');
+  const panel = reviewers.map((r) => `- **${r.title}** — \`${r.model}\` — ${panelStatus(r)}`).join('\n');
 
   const lines: string[] = [
     '## 🤖 Multi-model review',
