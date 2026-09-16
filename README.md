@@ -89,6 +89,14 @@ on:
   issue_comment:
     types: [created]
 
+# Required: the reusable workflow posts the review, and a called workflow cannot
+# exceed the caller's token scopes. Without this, a repo whose default
+# GITHUB_TOKEN is read-only (GitHub's default) fails the call at startup.
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 jobs:
   review:
     if: >
@@ -111,6 +119,11 @@ name: PR Review (label)
 on:
   pull_request:
     types: [labeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
 
 jobs:
   review:
