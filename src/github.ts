@@ -1,7 +1,7 @@
 // GitHub REST helpers: gather the PR, and post one combined review.
 
 import { GITHUB_API, SUMMARY_MARKER, INLINE_MARKER } from './config';
-import { fetchWithTimeout } from './http';
+import { fetchWithTimeout, isRetriableStatus, sleep } from './http';
 import type { ChangedFile } from './metrics';
 
 const GITHUB_TIMEOUT_MS = 30_000;
@@ -115,22 +115,29 @@ export async function deletePriorInlineComments(ctx: PullContext): Promise<numbe
 }
 
 /**
- * Post one PR review (event COMMENT so it never auto-approves or blocks) with
- * inline comments. Invalid inline comments are dropped one at a time on 422 so
- * a single bad line can't sink the whole review.
+ * Post one PR review (event COMMENT so it never auto-approves or blocks) to
+ * anchor inline comments. Only call this when there are inline comments — a
+ * body-only review would just duplicate the summary comment, and the reviews
+ * endpoint returns a flaky "internal error" 422 for that case.
+ *
+ * The reviews endpoint intermittently returns 422 "An internal error occurred,
+ * please try again" even for a valid payload, so a 422 (and any 5xx/429/408) is
+ * retried with backoff. The summary comment already lists every finding, so if
+ * this ultimately fails the caller logs it and the run still succeeds.
  */
 export async function postReview(
   ctx: PullContext,
   body: string,
   comments: InlineComment[],
 ): Promise<void> {
-  const payload = (cs: InlineComment[]) => ({
+  if (comments.length === 0) return;
+  const payload = {
     event: 'COMMENT',
     body,
-    comments: cs.map((c) => ({ path: c.path, line: c.line, side: 'RIGHT', body: c.body })),
-  });
+    comments: comments.map((c) => ({ path: c.path, line: c.line, side: 'RIGHT', body: c.body })),
+  };
 
-  let attempt = [...comments];
+  let lastError = '';
   for (let tries = 0; tries < 4; tries++) {
     const res = await fetchWithTimeout(
       `${GITHUB_API}/repos/${ctx.owner}/${ctx.repo}/pulls/${ctx.number}/reviews`,
@@ -142,19 +149,21 @@ export async function postReview(
           'X-GitHub-Api-Version': '2022-11-28',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload(attempt)),
+        body: JSON.stringify(payload),
       },
       GITHUB_TIMEOUT_MS,
     );
     if (res.ok) return;
     const text = await res.text().catch(() => '');
-    // On a line-position error, drop inline comments and post body-only.
-    if (res.status === 422 && attempt.length > 0) {
-      attempt = [];
+    lastError = `HTTP ${res.status}: ${text.slice(0, 500)}`;
+    // 422 here is usually the transient "internal error"; 408/429/5xx are transient too.
+    if ((res.status === 422 || isRetriableStatus(res.status)) && tries < 3) {
+      await sleep(750 * (tries + 1));
       continue;
     }
-    throw new Error(`GitHub post review -> ${res.status}: ${text.slice(0, 500)}`);
+    break;
   }
+  throw new Error(`GitHub post review -> ${lastError}`);
 }
 
 /** Upsert the top-level summary comment so re-runs replace it in place. */
