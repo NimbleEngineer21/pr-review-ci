@@ -166,14 +166,15 @@ the caller's default branch.
   "models": {
     "classifier": "openai/gpt-5-nano",
     "synth": "openai/gpt-5-mini",
-    "pool": ["openai/gpt-5-mini", "deepseek/deepseek-v4.1-flash", "meta-llama/llama-3.3-70b-instruct"],
+    "pool": ["openai/gpt-5-mini", "deepseek/deepseek-v4.1-flash", "qwen/qwen3-coder-30b-a3b-instruct", "google/gemini-2.5-flash"],
     "cheapPool": ["google/gemini-2.5-flash", "qwen/qwen3-coder-30b-a3b-instruct"]
   },
   "limits": {
     "maxReviewers": 3,
     "maxDiffChars": 120000,
     "reasoningOutputTokens": 12000,
-    "maxReasoningTokens": 64000
+    "maxReasoningTokens": 64000,
+    "maxRunInputTokens": 150000
   },
   "thresholds": { "small": 50, "medium": 300 },
   "disabledPersonas": ["cloudflare"]
@@ -183,6 +184,22 @@ the caller's default branch.
 Use it to swap the model roster per repo, cap the panel size, retune the size
 buckets, or drop a persona a repo doesn't need (e.g. `cloudflare` on a
 non-Workers repo).
+
+**Model assignment is by fit, not array order.** Each persona has a ranked list
+of model lineages (security prefers the strongest reasoning model, `web-ui` a
+UI-capable one, and so on); the planner assigns each seat its top free lineage
+and keeps every seat on a distinct one. The `pool` is a set of candidate
+lineages, not a positional list — reorder it freely.
+
+**Specialists review a scoped diff.** A specialist persona (`security`,
+`data-architect`, `cloudflare`, `web-ui`) receives its own files in full plus a
+one-line-per-file digest of the rest, instead of the whole diff. Generalists
+(`correctness`, `qa`, …) still get the full diff. This cuts tokens and sharpens
+each specialist's focus.
+
+**Run budget.** `maxRunInputTokens` caps the total projected input across all
+seats for one run. On a very large PR the run first shrinks the diff, then drops
+its lowest-priority seat, to stay under the cap.
 
 **Reasoning models.** OpenAI reasoning lineages (`o1`/`o3`/`o4`, GPT-5) bill
 hidden reasoning tokens from the same `max_tokens` pool as the visible answer, so

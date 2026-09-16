@@ -4,9 +4,22 @@
 import { settings } from './config';
 import type { Effort, Finding, ReviewerResult, Severity } from './findings';
 import { chat, extractJson } from './openrouter';
-import { persona } from './personas';
+import { persona, type PersonaId } from './personas';
 import type { PlanEntry } from './policy';
 import type { PullContext } from './github';
+import { matchesOverlay, type ChangedFile } from './metrics';
+
+// A specialist persona reviews a bounded slice of the PR. It receives its own
+// files at full fidelity plus a one-line-per-file digest of the rest for
+// cross-file context, instead of the whole diff. Generalist personas (not
+// listed) get the full diff, because their lens spans every file. The value is
+// each specialist's overlay name from metrics.ts.
+const PERSONA_LENS: Partial<Record<PersonaId, string>> = {
+  security: 'security',
+  'data-architect': 'migrations',
+  cloudflare: 'cloudflare',
+  'web-ui': 'frontend',
+};
 
 const EFFORT_HINT: Record<Effort, string> = {
   low: 'Be fast. Report only clear, high-value issues. Skip style nits.',
@@ -46,20 +59,49 @@ function annotatePatch(patch: string): string {
   return out.join('\n');
 }
 
-function buildDiffText(ctx: PullContext): string {
-  const parts: string[] = [];
-  for (const f of ctx.files) {
-    if (!f.patch) {
-      parts.push(`# ${f.path} (${f.status}, no patch available — binary or too large)`);
-      continue;
-    }
-    parts.push(`# ${f.path} (${f.status}, +${f.additions}/-${f.deletions})\n${annotatePatch(f.patch)}`);
+function fullFile(f: ChangedFile): string {
+  if (!f.patch) return `# ${f.path} (${f.status}, no patch available — binary or too large)`;
+  return `# ${f.path} (${f.status}, +${f.additions}/-${f.deletions})\n${annotatePatch(f.patch)}`;
+}
+
+/** One line per file: path, status, churn, and the first few hunk headers. */
+function digestLine(f: ChangedFile): string {
+  const heads = (f.patch ?? '')
+    .split('\n')
+    .filter((l) => l.startsWith('@@'))
+    .slice(0, 3)
+    .join(' ');
+  return `- ${f.path} (${f.status}, +${f.additions}/-${f.deletions}) ${heads}`.trim();
+}
+
+function truncate(text: string): string {
+  if (text.length <= settings.limits.maxDiffChars) return text;
+  return `${text.slice(0, settings.limits.maxDiffChars)}\n\n[diff truncated at ${settings.limits.maxDiffChars} chars]`;
+}
+
+/**
+ * The diff a given persona reviews. A specialist gets its lens files in full
+ * plus a compact digest of the other files (so it keeps cross-file context
+ * without paying for the full text). A generalist — or a specialist whose lens
+ * matched no file — gets the whole diff.
+ */
+export function buildDiffText(ctx: PullContext, personaId: PersonaId): string {
+  const lens = PERSONA_LENS[personaId];
+  if (!lens) return truncate(ctx.files.map(fullFile).join('\n\n'));
+
+  const inLens = ctx.files.filter((f) => matchesOverlay(f.path, lens));
+  const rest = ctx.files.filter((f) => !matchesOverlay(f.path, lens));
+  if (inLens.length === 0) return truncate(ctx.files.map(fullFile).join('\n\n'));
+
+  const parts = [inLens.map(fullFile).join('\n\n')];
+  if (rest.length > 0) {
+    parts.push(
+      `# Other changed files (context digest — not your focus, review only the files above)\n${rest
+        .map(digestLine)
+        .join('\n')}`,
+    );
   }
-  let text = parts.join('\n\n');
-  if (text.length > settings.limits.maxDiffChars) {
-    text = `${text.slice(0, settings.limits.maxDiffChars)}\n\n[diff truncated at ${settings.limits.maxDiffChars} chars]`;
-  }
-  return text;
+  return truncate(parts.join('\n\n'));
 }
 
 // Shared output contract appended to every persona's lens. The confidence
@@ -91,7 +133,7 @@ export async function runReviewer(entry: PlanEntry, ctx: PullContext): Promise<R
     EFFORT_HINT[entry.effort],
     '',
     'Diff:',
-    buildDiffText(ctx),
+    buildDiffText(ctx, entry.persona),
   ]
     .filter(Boolean)
     .join('\n');
