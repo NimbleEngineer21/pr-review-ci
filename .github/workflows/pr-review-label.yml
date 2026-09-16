@@ -19,7 +19,7 @@ jobs:
     if: >
       github.event.label.name == 'ai-review' ||
       github.event.label.name == 'ai-review-deep'
-    uses: NimbleEngineer21/pr-review-ci/.github/workflows/review.yml@main
+    uses: NimbleEngineer21/pr-review-ci/.github/workflows/review.yml@v1
     with:
       pr_number: ${{ github.event.pull_request.number }}
       effort: ${{ github.event.label.name == 'ai-review-deep' && 'high' || '' }}
