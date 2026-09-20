@@ -60,8 +60,10 @@ async function main(): Promise<void> {
     settings.limits.maxRunInputTokens,
     settings.limits.maxDiffChars,
   );
+  // The effective diff cap for THIS run — passed down to each reviewer rather
+  // than mutating the shared settings singleton.
+  const effectiveMaxDiffChars = budget.maxDiffChars;
   if (budget.actions.length > 0) {
-    settings.limits.maxDiffChars = budget.maxDiffChars;
     plan.reviewers = plan.reviewers.slice(0, budget.seats);
     console.log(
       `Budget guard: projected input exceeded ${settings.limits.maxRunInputTokens} tokens — ${budget.actions.join('; ')}.`,
@@ -74,7 +76,9 @@ async function main(): Promise<void> {
   );
 
   console.log('::group::Reviewers');
-  const results = await Promise.all(plan.reviewers.map((entry) => runReviewer(entry, ctx)));
+  const results = await Promise.all(
+    plan.reviewers.map((entry) => runReviewer(entry, ctx, effectiveMaxDiffChars)),
+  );
   for (const r of results) {
     console.log(`${r.id} (${r.model}): ${r.error ? `ERROR ${r.error}` : `${r.findings.length} finding(s)`}`);
   }

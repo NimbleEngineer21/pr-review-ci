@@ -74,9 +74,9 @@ function digestLine(f: ChangedFile): string {
   return `- ${f.path} (${f.status}, +${f.additions}/-${f.deletions}) ${heads}`.trim();
 }
 
-function truncate(text: string): string {
-  if (text.length <= settings.limits.maxDiffChars) return text;
-  return `${text.slice(0, settings.limits.maxDiffChars)}\n\n[diff truncated at ${settings.limits.maxDiffChars} chars]`;
+function truncate(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n\n[diff truncated at ${maxChars} chars]`;
 }
 
 /**
@@ -85,13 +85,17 @@ function truncate(text: string): string {
  * without paying for the full text). A generalist — or a specialist whose lens
  * matched no file — gets the whole diff.
  */
-export function buildDiffText(ctx: PullContext, personaId: PersonaId): string {
+export function buildDiffText(
+  ctx: PullContext,
+  personaId: PersonaId,
+  maxDiffChars: number = settings.limits.maxDiffChars,
+): string {
   const lens = PERSONA_LENS[personaId];
-  if (!lens) return truncate(ctx.files.map(fullFile).join('\n\n'));
+  if (!lens) return truncate(ctx.files.map(fullFile).join('\n\n'), maxDiffChars);
 
   const inLens = ctx.files.filter((f) => matchesOverlay(f.path, lens));
   const rest = ctx.files.filter((f) => !matchesOverlay(f.path, lens));
-  if (inLens.length === 0) return truncate(ctx.files.map(fullFile).join('\n\n'));
+  if (inLens.length === 0) return truncate(ctx.files.map(fullFile).join('\n\n'), maxDiffChars);
 
   const parts = [inLens.map(fullFile).join('\n\n')];
   if (rest.length > 0) {
@@ -101,7 +105,7 @@ export function buildDiffText(ctx: PullContext, personaId: PersonaId): string {
         .join('\n')}`,
     );
   }
-  return truncate(parts.join('\n\n'));
+  return truncate(parts.join('\n\n'), maxDiffChars);
 }
 
 // Shared output contract appended to every persona's lens. The confidence
@@ -123,7 +127,11 @@ Return ONLY a JSON object of this exact shape:
 - line is the new-file line number, or null for a file/PR-level note.
 - Keep title under 80 chars. Return an empty findings array if you find nothing in your focus.`;
 
-export async function runReviewer(entry: PlanEntry, ctx: PullContext): Promise<ReviewerResult> {
+export async function runReviewer(
+  entry: PlanEntry,
+  ctx: PullContext,
+  maxDiffChars: number = settings.limits.maxDiffChars,
+): Promise<ReviewerResult> {
   const p = persona(entry.persona);
   const system = `${p.system}\n\n${OUTPUT_CONTRACT}`;
   const user = [
@@ -133,7 +141,7 @@ export async function runReviewer(entry: PlanEntry, ctx: PullContext): Promise<R
     EFFORT_HINT[entry.effort],
     '',
     'Diff:',
-    buildDiffText(ctx, entry.persona),
+    buildDiffText(ctx, entry.persona, maxDiffChars),
   ]
     .filter(Boolean)
     .join('\n');

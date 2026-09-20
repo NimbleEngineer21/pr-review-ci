@@ -80,6 +80,7 @@ const MODEL_PREFERENCE: Record<PersonaId, string[]> = {
  * default).
  */
 export function assignModels(personas: PersonaId[], pool: string[]): string[] {
+  if (pool.length === 0) throw new Error('assignModels: models.pool is empty');
   const used = new Set<string>();
   const take = (model: string): string => {
     used.add(model);

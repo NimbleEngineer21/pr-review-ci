@@ -51,4 +51,10 @@ describe('buildDiffText lens scoping', () => {
     expect(out).toContain('CSSCONTENT');
     expect(out).not.toContain('context digest');
   });
+
+  it('honors an explicit maxDiffChars cap without touching global settings', () => {
+    const out = buildDiffText(ctxOf(), 'correctness', 30);
+    expect(out.length).toBeLessThan(120);
+    expect(out).toContain('[diff truncated at 30 chars]');
+  });
 });

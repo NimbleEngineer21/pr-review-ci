@@ -92,6 +92,10 @@ describe('assignModels', () => {
     expect(new Set(models).size).toBe(3);
   });
 
+  it('throws on an empty pool instead of producing an undefined model', () => {
+    expect(() => assignModels(['security'], [])).toThrow(/pool is empty/);
+  });
+
   it('falls back to an unused model when no preferred lineage is free', () => {
     // A tiny pool with only openai forces the non-preferred fallback path.
     const models = assignModels(['security', 'correctness'], ['openai/gpt-5-mini', 'qwen/q']);
