@@ -35,6 +35,13 @@ export interface Settings {
     reasoningOutputTokens: number;
     /** Reasoning headroom added on top of the visible floor for those models. */
     maxReasoningTokens: number;
+    /**
+     * Soft ceiling on TOTAL prompt (input) tokens a single run may send across
+     * all reviewer seats. When the projected cost exceeds it, the run first
+     * shrinks the diff, then drops its lowest-priority seat. A cost guard for a
+     * pathologically large PR, not a normal-case limit.
+     */
+    maxRunInputTokens: number;
   };
   /** Code-churn cutoffs: < small => small; <= medium => medium; else large. */
   thresholds: { small: number; medium: number };
@@ -46,19 +53,16 @@ export const DEFAULT_SETTINGS: Settings = {
   models: {
     classifier: 'openai/gpt-5-nano',
     synth: 'openai/gpt-5-mini',
+    // One strong model per lineage, matched to personas by fit in policy.ts.
+    // Weak reviewers (llama-3.3-70b, mistral-small-24b) were dropped: on a
+    // 3-seat panel they mostly added noise the synthesizer had to filter.
     pool: [
       'openai/gpt-5-mini',
       'deepseek/deepseek-v4.1-flash',
-      'meta-llama/llama-3.3-70b-instruct',
       'qwen/qwen3-coder-30b-a3b-instruct',
       'google/gemini-2.5-flash',
-      'mistralai/mistral-small-3.2-24b-instruct',
     ],
-    cheapPool: [
-      'google/gemini-2.5-flash',
-      'qwen/qwen3-coder-30b-a3b-instruct',
-      'mistralai/mistral-small-3.2-24b-instruct',
-    ],
+    cheapPool: ['google/gemini-2.5-flash', 'qwen/qwen3-coder-30b-a3b-instruct'],
   },
   limits: {
     maxDiffChars: 120_000,
@@ -67,6 +71,7 @@ export const DEFAULT_SETTINGS: Settings = {
     maxSynthTokens: 4_000,
     reasoningOutputTokens: 12_000,
     maxReasoningTokens: 64_000,
+    maxRunInputTokens: 150_000,
   },
   thresholds: { small: 50, medium: 300 },
   disabledPersonas: [],
@@ -122,6 +127,7 @@ export function applyConfig(raw: unknown): void {
       'maxSynthTokens',
       'reasoningOutputTokens',
       'maxReasoningTokens',
+      'maxRunInputTokens',
     ] as const;
     for (const k of keys) {
       if (typeof l[k] === 'number' && Number.isFinite(l[k]) && (l[k] as number) > 0) {

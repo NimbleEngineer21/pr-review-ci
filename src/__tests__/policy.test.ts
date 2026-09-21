@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { computeMetrics, type ChangedFile } from '../metrics';
-import { buildPlan } from '../policy';
+import { buildPlan, assignModels, planRunBudget } from '../policy';
+import type { PersonaId } from '../personas';
 
 const f = (path: string, additions = 10, deletions = 0): ChangedFile => ({
   path,
@@ -62,5 +63,68 @@ describe('buildPlan', () => {
   it('never exceeds three reviewers', () => {
     const plan = buildPlan(computeMetrics([f('src/worker/auth.ts', 900, 200)]), 'high');
     expect(plan.reviewers.length).toBeLessThanOrEqual(3);
+  });
+
+  it('routes security to the reasoning model by fit, not by array position', () => {
+    const plan = buildPlan(computeMetrics([f('src/worker/auth.ts', 400, 100)]), 'high');
+    const sec = plan.reviewers.find((r) => r.persona === 'security');
+    expect(sec!.model).toMatch(/^openai\//);
+    // web-ui, when present, must not draw the reasoning seat (kept for security).
+    const ui = plan.reviewers.find((r) => r.persona === 'web-ui');
+    if (ui) expect(ui.model).not.toMatch(/^openai\//);
+  });
+});
+
+const POOL = [
+  'openai/gpt-5-mini',
+  'deepseek/deepseek-v4.1-flash',
+  'qwen/qwen3-coder-30b-a3b-instruct',
+  'google/gemini-2.5-flash',
+];
+
+describe('assignModels', () => {
+  it('gives each persona its preferred lineage and keeps lineages distinct', () => {
+    const personas: PersonaId[] = ['security', 'web-ui', 'performance'];
+    const models = assignModels(personas, POOL);
+    expect(models[0]).toMatch(/^openai\//); // security -> reasoning
+    expect(models[1]).toMatch(/^google\//); // web-ui -> gemini
+    expect(models[2]).toMatch(/^deepseek\//); // performance -> deepseek
+    expect(new Set(models).size).toBe(3);
+  });
+
+  it('throws on an empty pool instead of producing an undefined model', () => {
+    expect(() => assignModels(['security'], [])).toThrow(/pool is empty/);
+  });
+
+  it('falls back to an unused model when no preferred lineage is free', () => {
+    // A tiny pool with only openai forces the non-preferred fallback path.
+    const models = assignModels(['security', 'correctness'], ['openai/gpt-5-mini', 'qwen/q']);
+    expect(new Set(models).size).toBe(2);
+    expect(models).toContain('openai/gpt-5-mini');
+    expect(models).toContain('qwen/q');
+  });
+});
+
+describe('planRunBudget', () => {
+  it('does not trim a run that fits the budget', () => {
+    const b = planRunBudget(3, 40_000, 150_000, 120_000);
+    expect(b.seats).toBe(3);
+    expect(b.actions).toHaveLength(0);
+  });
+
+  it('shrinks the diff cap before dropping a seat', () => {
+    // 3 seats * 120k chars / 4 = 90k tokens; budget 60k forces a shrink first.
+    const b = planRunBudget(3, 120_000, 60_000, 120_000);
+    expect(b.actions[0]).toMatch(/shrank diff cap/);
+    expect(b.maxDiffChars).toBeLessThan(120_000);
+    expect(b.seats).toBe(3);
+  });
+
+  it('drops the lowest-priority seat when the floor is not enough', () => {
+    // Tiny budget: even at the 20k-char floor, 3 seats * 5k tokens = 15k > 8k.
+    const b = planRunBudget(3, 200_000, 8_000, 120_000);
+    expect(b.actions.some((a) => /dropped lowest-priority/.test(a))).toBe(true);
+    expect(b.seats).toBeLessThan(3);
+    expect(b.seats).toBeGreaterThanOrEqual(1);
   });
 });

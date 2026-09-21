@@ -16,6 +16,7 @@ const SYSTEM = `You are the lead reviewer. Multiple staff engineers reviewed one
 Your job:
 - Keep the real, defensible issues. Drop noise, contradicted claims, and anything without a concrete problem.
 - Do NOT invent issues that are not in the clusters.
+- Do NOT drop a blocker- or high-severity SECURITY or DATA-LOSS issue just because only one reviewer raised it. High-stakes findings need corroboration to rank UP, not to survive. Keep it and note it is single-source; downgrade its confidence, not its existence.
 - Set a final severity per issue and one overall verdict:
   - "BLOCK" only for a confirmed correctness, security, or data-loss defect.
   - "COMMENT" for non-blocking issues worth addressing.
@@ -80,12 +81,54 @@ export async function synthesize(
     return finalize(
       typeof out.summary === 'string' ? out.summary : 'Review complete.',
       VERDICTS.includes(out.verdict as Verdict) ? (out.verdict as Verdict) : 'COMMENT',
-      normalizeMerged(out.findings),
+      reinjectCritical(normalizeMerged(out.findings), clusters),
       isEligible,
     );
   } catch {
     return fallbackMerge(clusters, isEligible);
   }
+}
+
+const CRITICAL_CATEGORY = /secur|auth|inject|crypto|token|pii|xss|ssrf|csrf/i;
+const DATA_LOSS = /data.?loss|corrupt|delete|drop\b|overwrite|truncate|destroy/i;
+
+/** A high-stakes cluster we must not let the synthesizer silently drop. */
+function isCritical(c: Cluster): boolean {
+  if (c.severity !== 'blocker' && c.severity !== 'high') return false;
+  const text = `${c.category} ${c.title} ${c.bodies.join(' ')}`;
+  return CRITICAL_CATEGORY.test(text) || DATA_LOSS.test(text);
+}
+
+function covers(f: MergedFinding, c: Cluster): boolean {
+  if (f.path !== c.path) return false;
+  if (f.category === c.category) return true;
+  if (f.line != null && c.line != null && Math.abs(f.line - c.line) <= 3) return true;
+  return false;
+}
+
+/**
+ * Safety net for rule D in SYSTEM: if the synthesizer dropped a blocker/high
+ * security or data-loss cluster, add it back — marked single-source and
+ * unconfirmed — rather than trust the model to have kept it. Recall on the
+ * highest-stakes findings must not depend on the model obeying a prompt.
+ */
+export function reinjectCritical(findings: MergedFinding[], clusters: Cluster[]): MergedFinding[] {
+  const extra: MergedFinding[] = [];
+  for (const c of clusters) {
+    if (!isCritical(c)) continue;
+    if (findings.some((f) => covers(f, c))) continue;
+    extra.push({
+      path: c.path,
+      line: c.line,
+      severity: c.severity,
+      category: c.category,
+      title: c.title,
+      body: `⚠ Raised by one reviewer and not corroborated by the rest of the panel — verify before dismissing. ${c.bodies.join(' | ')}`,
+      agreedBy: c.agreedBy,
+      inline: false,
+    });
+  }
+  return extra.length ? [...findings, ...extra] : findings;
 }
 
 function finalize(

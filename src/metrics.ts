@@ -70,6 +70,12 @@ export function bucketFor(files: ChangedFile[]): { bucket: Bucket; codeChurn: nu
   return { bucket, codeChurn };
 }
 
+/** True when a path matches a named overlay's rule (e.g. 'security', 'frontend'). */
+export function matchesOverlay(path: string, overlay: string): boolean {
+  const rule = OVERLAY_RULES.find((r) => r.overlay === overlay);
+  return rule ? rule.re.test(path) : false;
+}
+
 export function overlaysFor(files: ChangedFile[]): string[] {
   const hits = new Set<string>();
   for (const f of files) {
